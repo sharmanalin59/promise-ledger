@@ -86,7 +86,7 @@ Success criterion:
 
 * Java 21
 * Spring Boot
-* PostgreSQL
+* MYSQL
 * Flyway
 * Docker
 
