@@ -11,5 +11,13 @@ Data Strategy:
 - Extracted promises stored in relational tables
 - Optional JSON column for AI metadata caching
 
+Primary Key Strategy:
+- UUID primary keys for all domain entities
+- Company
+- Transcript
+- Promise
+- Evidence
+- CredibilitySnapshot
+
 Reason:
 System is relational and time-evolving, not document-based.
