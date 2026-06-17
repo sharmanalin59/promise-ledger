@@ -15,7 +15,3 @@ MVP focus:
 Goal:
 Build a system that shows:
 "What did management promise vs what actually happened?"
-
-Future Enhancement:
-Credibility scoring may incorporate delivery timing penalties.
-Promises delivered after the stated deadline may receive reduced credit.
