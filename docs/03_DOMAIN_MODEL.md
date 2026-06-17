@@ -20,6 +20,7 @@
 - statement
 - category
 - importance
+- progress_percent
 - timeframe
 - status (OPEN / DELIVERED / PARTIAL / MISSED)
 
