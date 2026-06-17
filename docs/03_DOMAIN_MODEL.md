@@ -10,7 +10,8 @@
 ### Transcript
 - id
 - company_id
-- quarter
+- fiscal_year
+- fiscal_quarter
 - text
 
 ### Promise
@@ -20,9 +21,9 @@
 - statement
 - category
 - importance
-- progress_percent
+- progress_percent (nullable DECIMAL)
 - timeframe
-- status (OPEN / DELIVERED / PARTIAL / MISSED)
+- status (OPEN / DELIVERED / PARTIAL / MISSED / EXPIRED)
 
 ### Evidence
 - id
@@ -31,13 +32,14 @@
 - text
 - confidence
 
-### CredibilitySnapshot
+### QuarterCredibilityScore
 -------------------
-id
-company_id
-quarter
-score
-delivered_count
-partial_count
-missed_count
-created_at
+- id
+- company_id
+- fiscal_year
+- fiscal_quarter
+- score
+- delivered_count
+- partial_count
+- missed_count
+- created_at
