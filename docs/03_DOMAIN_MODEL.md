@@ -29,3 +29,14 @@
 - source_type (TRANSCRIPT / FINANCIAL / FILINGS)
 - text
 - confidence
+
+### CredibilitySnapshot
+-------------------
+id
+company_id
+quarter
+score
+delivered_count
+partial_count
+missed_count
+created_at
