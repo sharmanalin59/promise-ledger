@@ -102,7 +102,55 @@ Potential benefits:
 
 ---
 
-# 4. Leadership Attribution
+# 4. Promise Evaluation History
+
+## Problem
+
+The MVP stores only the latest status and progress of a promise.
+
+Example:
+
+Q2:
+
+* Status = PARTIAL
+* Progress = 50%
+
+Q3:
+
+* Status = PARTIAL
+* Progress = 75%
+
+Q4:
+
+* Status = DELIVERED
+* Progress = 100%
+
+Historical evaluation states are overwritten.
+
+## Future Enhancement
+
+Introduce a PromiseEvaluation entity.
+
+Potential fields:
+
+* promise_id
+* fiscal_year
+* fiscal_quarter
+* status
+* progress_percent
+* evaluation_reasoning
+* created_at
+
+Purpose:
+
+* Preserve historical promise evaluations
+* Track execution progress over time
+* Support delay-aware credibility models
+* Support execution velocity analytics
+
+---
+
+# 5. Leadership Attribution
 
 ## Problem
 
@@ -131,7 +179,7 @@ Purpose:
 
 ---
 
-# 5. Forecast Accuracy Tracking
+# 6. Forecast Accuracy Tracking
 
 ## Problem
 
@@ -156,6 +204,8 @@ Potential categories:
 * Exceptional items
 * Industry commentary
 * Management explanations
+* One-time event explanations
+* Forward-looking management statements
 
 Purpose:
 
@@ -164,7 +214,7 @@ Purpose:
 
 ---
 
-# 6. Advanced Credibility Model
+# 7. Advanced Credibility Model
 
 Potential future inputs:
 
@@ -180,7 +230,29 @@ Create a more sophisticated management credibility score than the MVP status-bas
 
 ---
 
-# 7. Product Features Beyond MVP
+# 8. Additional Evidence Sources
+
+## Future Enhancement
+
+Support additional evidence sources beyond the MVP.
+
+Potential sources:
+
+* Annual reports
+* Investor day presentations
+* Regulatory disclosures
+* Press releases
+* Conference presentations
+
+Purpose:
+
+* Improve promise verification coverage
+* Increase evaluation confidence
+* Reduce dependence on a single source type
+
+---
+
+# 9. Product Features Beyond MVP
 
 Potential future features:
 

@@ -12,6 +12,7 @@
    MVP scoring:
     DELIVERED = 1.0
     PARTIAL = 0.5
+    MISSED = 0
 
 Rule:
 Numbers > transcripts > opinions

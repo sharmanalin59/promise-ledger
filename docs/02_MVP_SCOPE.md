@@ -4,7 +4,7 @@
 
 - Transcript ingestion (manual upload or text paste)
 - Promise extraction via LLM
-- Store promises in Postgres
+- Store promises in MySQL 8
 - Display promise ledger per company
 - Update status across quarters
 

@@ -6,6 +6,8 @@
 - id
 - name
 - ticker
+- created_at
+- updated_at
 
 ### Transcript
 - id
@@ -13,6 +15,8 @@
 - fiscal_year
 - fiscal_quarter
 - text
+- created_at
+- updated_at
 
 ### Promise
 - id
@@ -20,17 +24,21 @@
 - transcript_id
 - statement
 - category
-- importance
-- progress_percent (nullable DECIMAL)
+- importance (HIGH / MEDIUM / LOW)
+- progress_percent (nullable DECIMAL, range (0.00 - 100.00))
 - timeframe
 - status (OPEN / DELIVERED / PARTIAL / MISSED / EXPIRED)
+- created_at
+- updated_at
 
 ### Evidence
 - id
 - promise_id
-- source_type (TRANSCRIPT / FINANCIAL / FILINGS)
+- source_type (TRANSCRIPT / FINANCIAL_STATEMENT / EXCHANGE_FILING / INVESTOR_PRESENTATION / EARNINGS_CALL)
 - text
 - confidence
+- created_at
+- updated_at
 
 ### QuarterCredibilityScore
 -------------------
@@ -43,3 +51,4 @@
 - partial_count
 - missed_count
 - created_at
+- updated_at
