@@ -36,7 +36,7 @@ PromiseLedger automates it.
 3. Store commitments as promises
 4. Track promises across future quarters
 5. Evaluate outcomes using evidence
-6. Calculate management credibility
+6. Calculate management credibility dynamically from evaluated promises
 
 ### Promise Lifecycle
 
@@ -46,12 +46,15 @@ PromiseLedger automates it.
 * MISSED
 * EXPIRED
 
-### Evidence Priority
+### Evidence Sources (priority order)
 
-1. Financial Statements
-2. Exchange Filings
-3. Investor Presentations
-4. Earnings Calls
+1. `FINANCIAL_STATEMENT`
+2. `EXCHANGE_FILING`
+3. `INVESTOR_PRESENTATION`
+4. `EARNINGS_CALL`
+
+Credibility is computed from evaluated promises (`DELIVERED`, `PARTIAL`, `MISSED`).  
+If no evaluated promises exist, credibility is `NOT_AVAILABLE` (not zero).
 
 Numbers beat words.
 

@@ -252,6 +252,41 @@ Purpose:
 
 ---
 
+# 8A. Structured Timeframe Support
+
+## Problem
+
+The MVP stores `Promise.timeframe` as nullable free-text.
+
+This is flexible for early extraction, but makes deadline comparison and delay analysis difficult.
+
+Example free-text values:
+
+* "by Q2 FY26"
+* "within 12 months"
+* "over the next few quarters"
+
+## Future Enhancement
+
+Introduce structured timeframe fields.
+
+Potential fields:
+
+* target_fiscal_year
+* target_fiscal_quarter
+* target_date
+* timeframe_text (retain original free-text for auditability)
+
+Purpose:
+
+* Enable deterministic deadline checks
+* Support timing-aware credibility penalties
+* Improve promise matching and reporting
+
+This enhancement is intentionally excluded from the MVP.
+
+---
+
 # 9. Product Features Beyond MVP
 
 Potential future features:
@@ -265,6 +300,81 @@ Potential future features:
 * Sector-level credibility analytics
 
 These features are intentionally excluded from MVP scope.
+
+---
+
+# 10. Structured Financial Metrics Repository
+
+## Problem
+
+The MVP evaluates promises using evidence records entered manually during verification.
+
+Financial statements, investor presentations and management commentary are not stored as structured financial data.
+
+As a result, numerical verification depends on evidence text rather than direct metric comparison.
+
+Example:
+
+Promise:
+
+"Reduce debt by ₹100 crore by Q2."
+
+Evidence:
+
+"Net debt reduced from ₹500 crore to ₹380 crore."
+
+The system stores the evidence but not the underlying financial metrics separately.
+
+## Future Enhancement
+
+Introduce a structured FinancialMetric entity.
+
+Potential fields:
+
+* id
+* company_id
+* fiscal_year
+* fiscal_quarter
+* metric_name
+* metric_value
+* source_type
+* created_at
+
+Example:
+
+* NET_DEBT = 380
+* REVENUE = 1200
+* EBITDA_MARGIN = 18.5
+* CASH_BALANCE = 950
+
+Purpose:
+
+* Enable automated promise verification
+* Support historical financial analysis
+* Reduce dependence on manually entered evidence text
+* Improve credibility calculation accuracy
+
+This enhancement is intentionally excluded from the MVP.
+
+---
+
+# 11. Persisted Credibility Scores
+
+The MVP has no `QuarterCredibilityScore` entity.
+
+In the MVP:
+
+* credibility is computed dynamically from current promise statuses
+* evaluated promise counts are derived at read time and are not persisted
+* when `evaluated_count = 0`, credibility is `null` / `NOT_AVAILABLE`
+
+Future versions may persist credibility snapshots for:
+
+* faster dashboard loading
+* historical trend analysis
+* reporting
+
+Any future snapshot entity is intentionally excluded from the MVP and must not be confused with the removed `QuarterCredibilityScore` domain-model concept.
 
 ---
 
