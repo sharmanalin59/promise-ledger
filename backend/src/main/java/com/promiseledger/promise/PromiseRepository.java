@@ -9,4 +9,6 @@ public interface PromiseRepository extends JpaRepository<Promise, UUID> {
 
 	List<Promise> findByTranscriptCompanyId(UUID companyId);
 
+	boolean existsByTranscriptId(UUID transcriptId);
+
 }

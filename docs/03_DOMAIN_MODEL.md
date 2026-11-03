@@ -26,6 +26,7 @@ It is not an evidence source enum value. When evidence is derived from an earnin
 - id
 - transcript_id
 - statement
+- source_quote (nullable TEXT; verbatim transcript excerpt the promise was extracted from)
 - category
 - importance (HIGH / MEDIUM / LOW)
 - progress_percent (nullable DECIMAL, range 0.00 - 100.00)
@@ -35,6 +36,8 @@ It is not an evidence source enum value. When evidence is derived from an earnin
 - updated_at
 
 `transcript_id` identifies the originating transcript that produced the promise.
+
+`source_quote` records extraction provenance: the exact transcript text that supports the promise. Extraction rejects quotes that do not appear in the transcript. It is distinct from `Evidence`, which holds verification material entered manually to judge whether the promise was kept. It is nullable so promises created before it existed remain valid.
 
 Company ownership is derived through:
 

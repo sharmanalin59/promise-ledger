@@ -38,6 +38,9 @@ public class Promise {
 	@Column(name = "statement", nullable = false, columnDefinition = "text")
 	private String statement;
 
+	@Column(name = "source_quote", columnDefinition = "text")
+	private String sourceQuote;
+
 	@Column(name = "category", length = 100)
 	private String category;
 
@@ -84,6 +87,14 @@ public class Promise {
 
 	public String getStatement() {
 		return statement;
+	}
+
+	public String getSourceQuote() {
+		return sourceQuote;
+	}
+
+	public void setSourceQuote(String sourceQuote) {
+		this.sourceQuote = sourceQuote;
 	}
 
 	public String getCategory() {

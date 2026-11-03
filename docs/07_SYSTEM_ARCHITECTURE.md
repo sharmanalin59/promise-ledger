@@ -245,6 +245,8 @@ Conceptually:
 
 The application validates the response before persisting it.
 
+MVP note: the implemented extraction output contains only `statement`, `sourceQuote`, `category`, `importance`, and `timeframe` (see the README and `backend/src/main/resources/prompts/promise-extraction.txt`). Structured targets such as `metric`, `targetValue`, `operator`, and `targetPeriod` are future scope.
+
 ---
 
 # 8. Promise Ledger Module
@@ -703,6 +705,8 @@ Retry according to policy
 ```
 
 The transcript must remain stored even if extraction fails.
+
+MVP note: extraction runs synchronously and no extraction status is persisted. A failed extraction returns an error to the caller, is logged, and saves no promises; retrying means calling the extract endpoint again. Stored statuses and automatic retries are future scope.
 
 ---
 

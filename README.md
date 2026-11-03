@@ -136,6 +136,25 @@ Start the backend (from `backend/`). It applies the Flyway migrations and listen
 
 Database settings are read from `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD`. The defaults match `docker-compose.yml` and are for local development only.
 
+Claude settings (needed only for promise extraction; set them in the environment, never in files):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | none | Claude API key. Without it, extraction returns `503`. |
+| `CLAUDE_MODEL` | `claude-sonnet-5-5` | Model ID. |
+| `CLAUDE_TIMEOUT` | `120s` | Maximum time to wait for Claude's reply. |
+| `CLAUDE_MAX_TOKENS` | `16000` | Maximum reply length. |
+
+The automated tests mock Claude and need no API key. One optional test calls the real Claude API (and incurs API charges); it runs only when both variables are set:
+
+```powershell
+$env:ANTHROPIC_API_KEY = "<your key>"
+$env:CLAUDE_LIVE_TEST = "true"
+.\mvnw.cmd test -Dtest=ClaudeLiveExtractionTests
+```
+
+On networks that intercept HTTPS, Java may fail with `PKIX path building failed`. On Windows, add `"-DargLine=-Djavax.net.ssl.trustStoreType=Windows-ROOT"` to the test command so the test JVM trusts the Windows certificate store.
+
 ---
 
 ## API
@@ -174,6 +193,29 @@ Errors use the RFC 9457 problem-details format (`application/problem+json`):
 ```json
 {"detail":"One or more fields are invalid.","instance":"/api/transcripts","status":400,"title":"Bad Request","errors":[{"field":"fiscalQuarter","message":"must be between 1 and 4"},{"field":"text","message":"is required and must not be blank"}]}
 ```
+
+### Extract promises from a transcript
+
+`POST /api/transcripts/{id}/extract` sends a stored transcript to Claude, validates the reply, and saves the extracted promises with status `OPEN`. It runs synchronously and can take up to `CLAUDE_TIMEOUT`.
+
+```bash
+curl -X POST http://localhost:8080/api/transcripts/<transcript id>/extract
+```
+
+`200 OK` returns `transcriptId`, `promiseCount`, and `promises`, where each promise has `id`, `statement`, `sourceQuote`, `category`, `importance` (`HIGH`/`MEDIUM`/`LOW`), `timeframe` (or omitted), and `status`. A transcript with no promises returns `promiseCount: 0`.
+
+Claude's reply is accepted only if it is a JSON object with a `promises` list in which every item has a non-blank `statement` and `sourceQuote` (each at most 2,000 characters), an `importance` of `HIGH`, `MEDIUM`, or `LOW`, an optional `category` (at most 100 characters) and `timeframe` (at most 255 characters), and a `sourceQuote` that appears in the transcript (ignoring differences in whitespace, letter case, and curly versus straight quotes and dashes). If any item fails, nothing is saved. The prompt is in `backend/src/main/resources/prompts/promise-extraction.txt`.
+
+| Status | When |
+|---|---|
+| `404` | The transcript does not exist. |
+| `409` | Promises have already been extracted for the transcript. |
+| `502` | Claude returned an error, an empty or malformed reply, or promises that failed validation (listed in `errors`). Nothing is saved. |
+| `503` | `ANTHROPIC_API_KEY` is not configured. |
+| `504` | Claude did not reply within `CLAUDE_TIMEOUT`. Nothing is saved. |
+| `500` | The promises could not be saved. Nothing is saved. |
+
+The transcript stays stored after any failure, so extraction can be retried.
 
 ---
 

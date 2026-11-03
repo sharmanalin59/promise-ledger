@@ -30,7 +30,7 @@ class PromiseLedgerApplicationTests {
 	void flywayAppliesAllMigrations() {
 		MigrationInfo[] applied = this.flyway.info().applied();
 
-		assertThat(applied).extracting((info) -> info.getVersion().getVersion()).containsExactly("1", "2");
+		assertThat(applied).extracting((info) -> info.getVersion().getVersion()).containsExactly("1", "2", "3");
 		assertThat(applied).allSatisfy((info) -> assertThat(info.getState().isFailed()).isFalse());
 	}
 
