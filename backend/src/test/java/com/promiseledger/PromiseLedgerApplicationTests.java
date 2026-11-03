@@ -30,18 +30,19 @@ class PromiseLedgerApplicationTests {
 	void flywayAppliesAllMigrations() {
 		MigrationInfo[] applied = this.flyway.info().applied();
 
-		assertThat(applied).extracting((info) -> info.getVersion().getVersion()).containsExactly("1", "2", "3");
+		assertThat(applied).extracting((info) -> info.getVersion().getVersion())
+			.containsExactly("1", "2", "3", "4");
 		assertThat(applied).allSatisfy((info) -> assertThat(info.getState().isFailed()).isFalse());
 	}
 
 	@Test
-	void schemaContainsExactlyTheFourMvpTables() {
+	void schemaContainsTheMvpTables() {
 		List<String> tables = this.jdbcTemplate.queryForList("""
 				SELECT table_name FROM information_schema.tables
 				WHERE table_schema = DATABASE() AND table_name <> 'flyway_schema_history'
 				""", String.class);
 
-		assertThat(tables).containsExactlyInAnyOrder("companies", "transcripts", "promises", "evidence");
+		assertThat(tables).containsExactlyInAnyOrder("companies", "transcripts", "promises", "evidence", "users");
 	}
 
 	@Test

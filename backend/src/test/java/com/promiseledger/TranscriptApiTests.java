@@ -19,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -125,7 +127,11 @@ class TranscriptApiTests {
 
 	@Test
 	void rejectsNonJsonContentType() throws Exception {
-		this.mockMvc.perform(post("/api/transcripts").contentType(MediaType.TEXT_PLAIN).content("Transcript text"))
+		this.mockMvc
+			.perform(post("/api/transcripts").with(user("demo"))
+				.with(csrf())
+				.contentType(MediaType.TEXT_PLAIN)
+				.content("Transcript text"))
 			.andExpect(status().isUnsupportedMediaType())
 			.andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON));
 	}
@@ -151,8 +157,10 @@ class TranscriptApiTests {
 	}
 
 	private ResultActions submit(String json) throws Exception {
-		return this.mockMvc
-			.perform(post("/api/transcripts").contentType(MediaType.APPLICATION_JSON).content(json));
+		return this.mockMvc.perform(post("/api/transcripts").with(user("demo"))
+			.with(csrf())
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(json));
 	}
 
 	private static String request(String ticker, int fiscalYear, int fiscalQuarter, String text) {

@@ -35,6 +35,8 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -241,7 +243,7 @@ class PromiseExtractionApiTests {
 
 	@Test
 	void rejectsUnknownTranscript() throws Exception {
-		this.mockMvc.perform(post("/api/transcripts/{id}/extract", UUID.randomUUID()))
+		this.mockMvc.perform(post("/api/transcripts/{id}/extract", UUID.randomUUID()).with(user("demo")).with(csrf()))
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.detail", containsString("was not found")));
 		verify(this.claudeClient, never()).complete(anyString(), anyString());
@@ -260,7 +262,8 @@ class PromiseExtractionApiTests {
 	}
 
 	private ResultActions extract() throws Exception {
-		return this.mockMvc.perform(post("/api/transcripts/{id}/extract", this.transcriptId));
+		return this.mockMvc
+			.perform(post("/api/transcripts/{id}/extract", this.transcriptId).with(user("demo")).with(csrf()));
 	}
 
 	private ResultActions expectFailure(int status, String detail) throws Exception {

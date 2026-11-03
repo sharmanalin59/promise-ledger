@@ -2,6 +2,15 @@
 
 ## Core Entities
 
+### User
+- id
+- username (unique; used for login)
+- password_hash (BCrypt; never store plaintext)
+- created_at
+- updated_at
+
+Authentication is session-based. Users are not tied to companies; every authenticated user sees the same shared catalogue. Roles and per-user visibility are out of scope.
+
 ### Company
 - id
 - name

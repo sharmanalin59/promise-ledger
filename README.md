@@ -155,9 +155,50 @@ $env:CLAUDE_LIVE_TEST = "true"
 
 On networks that intercept HTTPS, Java may fail with `PKIX path building failed`. On Windows, add `"-DargLine=-Djavax.net.ssl.trustStoreType=Windows-ROOT"` to the test command so the test JVM trusts the Windows certificate store.
 
+Demo login account (created at startup if missing; local defaults only — change the password outside local use):
+
+| Variable | Default |
+|---|---|
+| `DEMO_USER_ENABLED` | `true` |
+| `DEMO_USERNAME` | `demo` |
+| `DEMO_PASSWORD` | `demo` |
+
+Passwords are stored as BCrypt hashes. The session cookie is `JSESSIONID` (HttpOnly, SameSite=Lax). Set `SESSION_COOKIE_SECURE=true` behind HTTPS.
+
 ---
 
 ## API
+
+### Authentication
+
+All APIs except `GET /api/auth/csrf` and `POST /api/auth/login` require a logged-in session. State-changing requests also need CSRF: call `GET /api/auth/csrf`, then send the returned token in the `X-XSRF-TOKEN` header (or rely on the `XSRF-TOKEN` cookie for browser clients).
+
+```bash
+# 1) Get a CSRF token (also sets the XSRF-TOKEN cookie)
+curl -c cookies.txt -b cookies.txt http://localhost:8080/api/auth/csrf
+
+# 2) Log in (use the token from step 1 as X-XSRF-TOKEN)
+curl -c cookies.txt -b cookies.txt -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -H "X-XSRF-TOKEN: <token>" \
+  -d '{"username":"demo","password":"demo"}'
+
+# 3) Call protected APIs with the same cookie jar and CSRF header
+curl -c cookies.txt -b cookies.txt http://localhost:8080/api/auth/me
+
+# 4) Log out
+curl -c cookies.txt -b cookies.txt -X POST http://localhost:8080/api/auth/logout \
+  -H "X-XSRF-TOKEN: <token>"
+```
+
+| Status | When |
+|---|---|
+| `200` | Login succeeded (`{"username":"..."}`), or CSRF/me response. |
+| `204` | Logout succeeded. |
+| `401` | Missing/invalid session, or invalid username/password (same message either way). |
+| `403` | Authenticated session but missing/invalid CSRF on a state-changing request. |
+
+Every authenticated user can access the same shared company/transcript/promise catalogue. There are no roles or per-user visibility rules in this phase.
 
 ### Submit a transcript
 
