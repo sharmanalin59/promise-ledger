@@ -56,8 +56,10 @@ public class SecurityConfig {
 		csrfTokenRepository.setHeaderName("X-XSRF-TOKEN");
 		csrfTokenRepository.setCookieCustomizer((cookie) -> cookie.path("/").sameSite("Lax"));
 
-		http.csrf((csrf) -> csrf.csrfTokenRepository(csrfTokenRepository)
-			.csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
+		http.cors((cors) -> {
+		})
+			.csrf((csrf) -> csrf.csrfTokenRepository(csrfTokenRepository)
+				.csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
 			.sessionManagement((sessions) -> sessions.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
 				.sessionFixation((fixation) -> fixation.changeSessionId()))
 			.securityContext((context) -> context.securityContextRepository(securityContextRepository()))

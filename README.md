@@ -165,6 +165,24 @@ Demo login account (created at startup if missing; local defaults only — chang
 
 Passwords are stored as BCrypt hashes. The session cookie is `JSESSIONID` (HttpOnly, SameSite=Lax). Set `SESSION_COOKIE_SECURE=true` behind HTTPS.
 
+### Frontend
+
+From `frontend/` (Node 20+):
+
+```powershell
+npm install
+npm run dev
+```
+
+Vite serves `http://localhost:5173` and proxies `/api` to `http://localhost:8080`. Start the backend first, then open the UI and sign in with the demo account. Pages: login, company directory, company ledger (promises by quarter), promise detail (source quote + evidence).
+
+```powershell
+npm test
+npm run build
+```
+
+CORS for the Vite origin is enabled by default (`CORS_ALLOWED_ORIGINS`, default `http://localhost:5173`).
+
 ---
 
 ## API
@@ -257,6 +275,18 @@ Claude's reply is accepted only if it is a JSON object with a `promises` list in
 | `500` | The promises could not be saved. Nothing is saved. |
 
 The transcript stays stored after any failure, so extraction can be retried.
+
+### Browse companies and promises
+
+Authenticated read APIs for the React UI:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/companies` | Shared company catalogue |
+| `GET` | `/api/companies/{id}` | Company ledger: transcripts/promises grouped by fiscal year and quarter (newest first) |
+| `GET` | `/api/promises/{id}` | Promise detail with source quote, timeframe, assessment label, and verification evidence |
+
+`OPEN` promises are labeled `Unassessed`. Missing transcripts or empty quarters are returned as empty groups — never inferred as missed promises. Speaker identity is not in the domain model yet and is returned as `null`.
 
 ---
 
