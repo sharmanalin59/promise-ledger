@@ -31,7 +31,7 @@ class PromiseLedgerApplicationTests {
 		MigrationInfo[] applied = this.flyway.info().applied();
 
 		assertThat(applied).extracting((info) -> info.getVersion().getVersion())
-			.containsExactly("1", "2", "3", "4");
+			.containsExactly("1", "2", "3", "4", "5");
 		assertThat(applied).allSatisfy((info) -> assertThat(info.getState().isFailed()).isFalse());
 	}
 
@@ -42,7 +42,8 @@ class PromiseLedgerApplicationTests {
 				WHERE table_schema = DATABASE() AND table_name <> 'flyway_schema_history'
 				""", String.class);
 
-		assertThat(tables).containsExactlyInAnyOrder("companies", "transcripts", "promises", "evidence", "users");
+		assertThat(tables).containsExactlyInAnyOrder("companies", "transcripts", "promises", "evidence", "users",
+				"extraction_runs");
 	}
 
 	@Test

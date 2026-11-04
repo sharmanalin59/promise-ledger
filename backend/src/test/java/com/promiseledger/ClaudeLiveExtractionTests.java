@@ -53,6 +53,7 @@ class ClaudeLiveExtractionTests {
 	void deleteTestData() {
 		this.jdbcTemplate.update("DELETE FROM evidence");
 		this.jdbcTemplate.update("DELETE FROM promises");
+		this.jdbcTemplate.update("DELETE FROM extraction_runs");
 		this.jdbcTemplate.update("DELETE FROM transcripts");
 	}
 
@@ -61,7 +62,7 @@ class ClaudeLiveExtractionTests {
 		Transcript transcript = this.transcriptRepository.save(new Transcript(
 				this.companyRepository.findByTicker("PERSISTENT").orElseThrow(), 2027, 2, TRANSCRIPT_TEXT));
 
-		List<Promise> promises = this.extractionService.extract(transcript.getId());
+		List<Promise> promises = this.extractionService.extract(transcript.getId()).promises();
 
 		assertThat(promises).isNotEmpty();
 		assertThat(promises).allSatisfy((promise) -> {

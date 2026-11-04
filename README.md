@@ -142,8 +142,19 @@ Claude settings (needed only for promise extraction; set them in the environment
 |---|---|---|
 | `ANTHROPIC_API_KEY` | none | Claude API key. Without it, extraction returns `503`. |
 | `CLAUDE_MODEL` | `claude-sonnet-5-5` | Model ID. |
-| `CLAUDE_TIMEOUT` | `120s` | Maximum time to wait for Claude's reply. |
-| `CLAUDE_MAX_TOKENS` | `16000` | Maximum reply length. |
+| `CLAUDE_CONNECT_TIMEOUT` | `10s` | Maximum time to establish the connection. |
+| `CLAUDE_TIMEOUT` | `120s` | Maximum time to wait for each Claude reply. |
+| `CLAUDE_MAX_TOKENS` | `16000` | Maximum reply length, sent as `max_tokens`. |
+| `CLAUDE_MAX_ATTEMPTS` | `3` | Attempts per extract call, including the first. Only timeouts, connection failures, 408, 429, and 5xx are retried. |
+| `CLAUDE_RETRY_INITIAL_BACKOFF` | `500ms` | First retry wait before jitter. |
+| `CLAUDE_RETRY_MAX_BACKOFF` | `5s` | Cap on backoff and on `Retry-After`. |
+| `CLAUDE_CIRCUIT_FAILURE_THRESHOLD` | `5` | Consecutive provider failures that open the circuit. |
+| `CLAUDE_CIRCUIT_OPEN_DURATION` | `30s` | How long the open circuit rejects calls. |
+| `CLAUDE_MAX_CONCURRENT_CALLS` | `4` | Provider calls allowed in flight. |
+| `CLAUDE_CONCURRENCY_WAIT` | `5s` | How long a call waits for a free slot before `503`. |
+| `CLAUDE_MAX_INPUT_TOKENS` | `100000` | Estimated input limit. Oversized transcripts are rejected before the HTTP call. |
+| `CLAUDE_INPUT_USD_PER_MILLION` | `3` | Price used only to estimate input cost. |
+| `CLAUDE_OUTPUT_USD_PER_MILLION` | `15` | Price used only to estimate output cost. |
 
 The automated tests mock Claude and need no API key. One optional test calls the real Claude API (and incurs API charges); it runs only when both variables are set:
 
@@ -237,26 +248,31 @@ Errors use the RFC 9457 problem-details format (`application/problem+json`):
 
 ### Extract promises from a transcript
 
-`POST /api/transcripts/{id}/extract` sends a stored transcript to Claude, validates the reply, and saves the extracted promises with status `OPEN`. It runs synchronously and can take up to `CLAUDE_TIMEOUT`.
+`POST /api/transcripts/{id}/extract` sends a stored transcript to Claude, validates the reply, and saves the extracted promises with status `OPEN`. It runs synchronously. Each Claude attempt waits up to `CLAUDE_TIMEOUT`, and transient failures are retried up to `CLAUDE_MAX_ATTEMPTS`.
 
 ```bash
 curl -X POST http://localhost:8080/api/transcripts/<transcript id>/extract
 ```
 
-`200 OK` returns `transcriptId`, `promiseCount`, and `promises`, where each promise has `id`, `statement`, `sourceQuote`, `category`, `importance` (`HIGH`/`MEDIUM`/`LOW`), `timeframe` (or omitted), and `status`. A transcript with no promises returns `promiseCount: 0`.
+`200 OK` returns `transcriptId`, `promiseCount`, `promises`, and `usage`. Each promise has `id`, `statement`, `sourceQuote`, `category`, `importance` (`HIGH`/`MEDIUM`/`LOW`), `timeframe` (or omitted), and `status`. A transcript with no promises returns `promiseCount: 0`. `usage` has `provider`, `model`, `attempts`, `inputTokens`, `outputTokens`, `estimatedCostUsd`, and `latencyMillis`. Token fields are omitted from the cost when Claude does not return them.
+
+`GET /api/transcripts/{id}/extractions` lists every extract call for that transcript, newest first. Each row adds `id`, `transcriptId`, `attemptCount`, `failureCategory` (or null), `status` (`SUCCESS` or `FAILED`), and `createdAt` to the usage fields. Failed calls are stored too, so cost and the failure category can be inspected after a `4xx` or `5xx`.
 
 Claude's reply is accepted only if it is a JSON object with a `promises` list in which every item has a non-blank `statement` and `sourceQuote` (each at most 2,000 characters), an `importance` of `HIGH`, `MEDIUM`, or `LOW`, an optional `category` (at most 100 characters) and `timeframe` (at most 255 characters), and a `sourceQuote` that appears in the transcript (ignoring differences in whitespace, letter case, and curly versus straight quotes and dashes). If any item fails, nothing is saved. The prompt is in `backend/src/main/resources/prompts/promise-extraction.txt`.
 
+Input size is estimated as one token per four characters of the prompt plus the transcript. Above `CLAUDE_MAX_INPUT_TOKENS`, the call is rejected before HTTP. `429` responses wait for `Retry-After` when Claude sends one, capped by `CLAUDE_RETRY_MAX_BACKOFF`. Other retries use exponential backoff with jitter. Client errors such as `400` and `401` are not retried. After `CLAUDE_CIRCUIT_FAILURE_THRESHOLD` consecutive provider failures, further calls fail immediately until `CLAUDE_CIRCUIT_OPEN_DURATION` has passed. The API key is read from the environment and is never written to logs.
+
 | Status | When |
 |---|---|
+| `400` | The transcript exceeds `CLAUDE_MAX_INPUT_TOKENS`. Nothing is saved. |
 | `404` | The transcript does not exist. |
 | `409` | Promises have already been extracted for the transcript. |
 | `502` | Claude returned an error, an empty or malformed reply, or promises that failed validation (listed in `errors`). Nothing is saved. |
-| `503` | `ANTHROPIC_API_KEY` is not configured. |
-| `504` | Claude did not reply within `CLAUDE_TIMEOUT`. Nothing is saved. |
+| `503` | `ANTHROPIC_API_KEY` is not configured, the circuit is open, or the concurrency limit was reached. |
+| `504` | Claude did not reply within `CLAUDE_TIMEOUT` on the final attempt. Nothing is saved. |
 | `500` | The promises could not be saved. Nothing is saved. |
 
-The transcript stays stored after any failure, so extraction can be retried.
+The transcript stays stored after any failure, so extraction can be retried. The provider call itself is retried only for transient failures, and only within the attempt bound.
 
 ---
 

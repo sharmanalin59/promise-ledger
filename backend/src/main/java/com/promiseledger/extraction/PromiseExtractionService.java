@@ -2,6 +2,7 @@ package com.promiseledger.extraction;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -10,6 +11,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 import com.promiseledger.extraction.ExtractionOutput.ExtractedPromise;
+import com.promiseledger.extraction.ExtractionResponse.ExtractionUsage;
 import com.promiseledger.promise.Promise;
 import com.promiseledger.promise.PromiseImportance;
 import com.promiseledger.promise.PromiseRepository;
@@ -24,6 +26,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.ErrorResponseException;
 import tools.jackson.core.JacksonException;
@@ -36,9 +39,13 @@ public class PromiseExtractionService {
 
 	private final ClaudeClient claudeClient;
 
+	private final ClaudeProperties claudeProperties;
+
 	private final TranscriptRepository transcriptRepository;
 
 	private final PromiseRepository promiseRepository;
+
+	private final ExtractionRunRepository extractionRunRepository;
 
 	private final TransactionTemplate transactionTemplate;
 
@@ -48,43 +55,58 @@ public class PromiseExtractionService {
 
 	private final String systemPrompt;
 
-	public PromiseExtractionService(ClaudeClient claudeClient, TranscriptRepository transcriptRepository,
-			PromiseRepository promiseRepository, TransactionTemplate transactionTemplate, JsonMapper jsonMapper,
-			Validator validator) {
+	public PromiseExtractionService(ClaudeClient claudeClient, ClaudeProperties claudeProperties,
+			TranscriptRepository transcriptRepository, PromiseRepository promiseRepository,
+			ExtractionRunRepository extractionRunRepository, TransactionTemplate transactionTemplate,
+			JsonMapper jsonMapper, Validator validator) {
 		this.claudeClient = claudeClient;
+		this.claudeProperties = claudeProperties;
 		this.transcriptRepository = transcriptRepository;
 		this.promiseRepository = promiseRepository;
+		this.extractionRunRepository = extractionRunRepository;
 		this.transactionTemplate = transactionTemplate;
 		this.jsonMapper = jsonMapper;
 		this.validator = validator;
 		this.systemPrompt = loadPrompt();
 	}
 
-	public List<Promise> extract(UUID transcriptId) {
+	public ExtractionOutcome extract(UUID transcriptId) {
 		Transcript transcript = this.transcriptRepository.findById(transcriptId)
 			.orElseThrow(() -> problem(HttpStatus.NOT_FOUND, "Transcript " + transcriptId + " was not found.", null));
 		requireNoExistingPromises(transcriptId);
 		if (!this.claudeClient.isConfigured()) {
+			record(transcriptId, this.claudeProperties.model(), 0, null, null, null, 0, ExtractionRunStatus.FAILED,
+					ClaudeFailureCategory.NOT_CONFIGURED);
 			throw problem(HttpStatus.SERVICE_UNAVAILABLE,
 					"Promise extraction is unavailable: the Claude API key is not configured.", null);
 		}
 
 		logger.info("Extraction started for transcript {}", transcriptId);
-		String output;
+		long started = System.nanoTime();
+		ClaudeCompletion completion;
 		try {
-			output = this.claudeClient.complete(this.systemPrompt,
+			completion = this.claudeClient.completeDetailed(this.systemPrompt,
 					"<transcript>\n" + transcript.getText() + "\n</transcript>");
 		}
-		catch (ClaudeTimeoutException ex) {
-			logger.warn("Extraction failed for transcript {}: {}", transcriptId, ex.getMessage());
-			throw problem(HttpStatus.GATEWAY_TIMEOUT, ex.getMessage() + " No promises were saved.", ex);
-		}
 		catch (ClaudeException ex) {
-			logger.warn("Extraction failed for transcript {}: {}", transcriptId, ex.getMessage());
-			throw problem(HttpStatus.BAD_GATEWAY, ex.getMessage() + " No promises were saved.", ex);
+			long latency = elapsedMillis(started);
+			logger.warn("Extraction failed for transcript {} after {} attempt(s), category {}: {}", transcriptId,
+					ex.attempts(), ex.category(), ex.getMessage());
+			record(transcriptId, this.claudeProperties.model(), ex.attempts(), ex.inputTokens(), ex.outputTokens(),
+					ex.estimatedCostUsd(), latency, ExtractionRunStatus.FAILED, ex.category());
+			throw problem(statusFor(ex), ex.getMessage() + " No promises were saved.", ex);
 		}
 
-		List<ExtractedPromise> extracted = parseAndValidate(transcriptId, output, transcript.getText());
+		List<ExtractedPromise> extracted;
+		try {
+			extracted = parseAndValidate(transcriptId, completion.text(), transcript.getText());
+		}
+		catch (ErrorResponseException ex) {
+			record(transcriptId, completion, elapsedMillis(started), ExtractionRunStatus.FAILED,
+					ClaudeFailureCategory.INVALID_OUTPUT);
+			throw ex;
+		}
+
 		List<Promise> saved;
 		try {
 			saved = this.transactionTemplate.execute((status) -> {
@@ -95,11 +117,73 @@ public class PromiseExtractionService {
 		}
 		catch (DataAccessException ex) {
 			logger.error("Extraction failed for transcript {}: promises could not be saved", transcriptId, ex);
+			record(transcriptId, completion, elapsedMillis(started), ExtractionRunStatus.FAILED,
+					ClaudeFailureCategory.PERSISTENCE);
 			throw problem(HttpStatus.INTERNAL_SERVER_ERROR,
 					"Extracted promises could not be saved. No promises were saved.", ex);
 		}
-		logger.info("Extraction completed for transcript {}: {} promises saved", transcriptId, saved.size());
-		return saved;
+		catch (ErrorResponseException ex) {
+			record(transcriptId, completion, elapsedMillis(started), ExtractionRunStatus.SUCCESS, null);
+			throw ex;
+		}
+		ExtractionUsage usage = usage(completion, elapsedMillis(started));
+		record(transcriptId, completion.model(), completion.attempts(), completion.inputTokens(),
+				completion.outputTokens(), completion.estimatedCostUsd(), usage.latencyMillis(),
+				ExtractionRunStatus.SUCCESS, null);
+		logger.info(
+				"Extraction completed for transcript {}: {} promises saved, attempts={}, inputTokens={}, outputTokens={}, estimatedCostUsd={}",
+				transcriptId, saved.size(), usage.attempts(), usage.inputTokens(), usage.outputTokens(),
+				usage.estimatedCostUsd());
+		return new ExtractionOutcome(saved, usage);
+	}
+
+	@Transactional(readOnly = true)
+	public List<ExtractionRunResponse> extractions(UUID transcriptId) {
+		if (!this.transcriptRepository.existsById(transcriptId)) {
+			throw problem(HttpStatus.NOT_FOUND, "Transcript " + transcriptId + " was not found.", null);
+		}
+		return this.extractionRunRepository.findByTranscriptIdOrderByCreatedAtDesc(transcriptId)
+			.stream()
+			.map(ExtractionRunResponse::from)
+			.toList();
+	}
+
+	private void record(UUID transcriptId, ClaudeCompletion completion, long latencyMillis, ExtractionRunStatus status,
+			ClaudeFailureCategory failure) {
+		record(transcriptId, completion.model(), completion.attempts(), completion.inputTokens(),
+				completion.outputTokens(), completion.estimatedCostUsd(), latencyMillis, status, failure);
+	}
+
+	private void record(UUID transcriptId, String model, int attempts, Integer inputTokens, Integer outputTokens,
+			BigDecimal estimatedCostUsd, long latencyMillis, ExtractionRunStatus status,
+			ClaudeFailureCategory failure) {
+		try {
+			this.transactionTemplate.executeWithoutResult((tx) -> this.extractionRunRepository
+				.saveAndFlush(new ExtractionRun(this.transcriptRepository.getReferenceById(transcriptId),
+						ClaudeCompletion.PROVIDER, model, attempts, inputTokens, outputTokens, estimatedCostUsd,
+						latencyMillis, failure, status)));
+		}
+		catch (DataAccessException ex) {
+			logger.error("Could not record Claude usage for transcript {}", transcriptId, ex);
+		}
+	}
+
+	private static ExtractionUsage usage(ClaudeCompletion completion, long latencyMillis) {
+		return new ExtractionUsage(completion.provider(), completion.model(), completion.attempts(),
+				completion.inputTokens(), completion.outputTokens(), completion.estimatedCostUsd(), latencyMillis);
+	}
+
+	private static HttpStatus statusFor(ClaudeException ex) {
+		return switch (ex.category()) {
+			case TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
+			case CIRCUIT_OPEN, BUSY, NOT_CONFIGURED -> HttpStatus.SERVICE_UNAVAILABLE;
+			case INPUT_TOO_LARGE -> HttpStatus.BAD_REQUEST;
+			default -> HttpStatus.BAD_GATEWAY;
+		};
+	}
+
+	private static long elapsedMillis(long startedNanos) {
+		return Math.max(0, (System.nanoTime() - startedNanos) / 1_000_000L);
 	}
 
 	private List<ExtractedPromise> parseAndValidate(UUID transcriptId, String output, String transcriptText) {

@@ -706,7 +706,7 @@ Retry according to policy
 
 The transcript must remain stored even if extraction fails.
 
-MVP note: extraction runs synchronously and no extraction status is persisted. A failed extraction returns an error to the caller, is logged, and saves no promises; retrying means calling the extract endpoint again. Stored statuses and automatic retries are future scope.
+Extraction still runs synchronously on the request. Each call is stored in `extraction_runs` with the provider, model, attempt count, token usage, estimated cost, latency, and failure category. Transient Claude failures are retried with bounded exponential backoff and jitter. A circuit breaker rejects calls while the provider is persistently failing, and a semaphore bounds how many provider calls run at once. There is no background job queue: after a terminal failure, retrying means calling the extract endpoint again.
 
 ---
 

@@ -24,7 +24,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class ClaudeClientTests {
 
-	private static final ClaudeProperties PROPERTIES = new ClaudeProperties("test-key", "claude-test-model",
+	private static final ClaudeProperties PROPERTIES = ClaudeProperties.forTests("test-key", "claude-test-model",
 			"https://claude.test", Duration.ofSeconds(30), 1000);
 
 	private final RestClient.Builder builder = RestClient.builder();
@@ -106,7 +106,8 @@ class ClaudeClientTests {
 	@Test
 	void refusesToCallWithoutApiKey() {
 		ClaudeClient unconfigured = new ClaudeClient(
-				new ClaudeProperties(" ", "model", "https://claude.test", Duration.ofSeconds(30), 1000), this.builder);
+				ClaudeProperties.forTests(" ", "model", "https://claude.test", Duration.ofSeconds(30), 1000),
+				this.builder);
 
 		assertThat(unconfigured.isConfigured()).isFalse();
 		assertThatThrownBy(() -> unconfigured.complete("system", "user")).isExactlyInstanceOf(ClaudeException.class)

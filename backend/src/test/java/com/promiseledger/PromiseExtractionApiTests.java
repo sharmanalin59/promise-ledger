@@ -1,12 +1,19 @@
 package com.promiseledger;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 import com.promiseledger.company.CompanyRepository;
+import com.promiseledger.extraction.ClaudeCircuitOpenException;
 import com.promiseledger.extraction.ClaudeClient;
+import com.promiseledger.extraction.ClaudeCompletion;
 import com.promiseledger.extraction.ClaudeException;
+import com.promiseledger.extraction.ClaudeFailureCategory;
+import com.promiseledger.extraction.ClaudeInputTooLargeException;
 import com.promiseledger.extraction.ClaudeTimeoutException;
+import com.promiseledger.extraction.ExtractionRunRepository;
+import com.promiseledger.extraction.ExtractionRunStatus;
 import com.promiseledger.promise.Promise;
 import com.promiseledger.promise.PromiseImportance;
 import com.promiseledger.promise.PromiseRepository;
@@ -29,6 +36,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.BDDMockito.given;
@@ -37,6 +45,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -80,6 +89,9 @@ class PromiseExtractionApiTests {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+	@Autowired
+	private ExtractionRunRepository extractionRunRepository;
+
 	@MockitoBean
 	private ClaudeClient claudeClient;
 
@@ -97,12 +109,13 @@ class PromiseExtractionApiTests {
 	void deleteTestData() {
 		this.jdbcTemplate.update("DELETE FROM evidence");
 		this.jdbcTemplate.update("DELETE FROM promises");
+		this.jdbcTemplate.update("DELETE FROM extraction_runs");
 		this.jdbcTemplate.update("DELETE FROM transcripts");
 	}
 
 	@Test
 	void savesValidatedPromisesAndReturnsThem() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willReturn(VALID_OUTPUT);
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(reply(VALID_OUTPUT));
 
 		extract().andExpect(status().isOk())
 			.andExpect(content().contentType(MediaType.APPLICATION_JSON))
@@ -119,7 +132,7 @@ class PromiseExtractionApiTests {
 			.andExpect(jsonPath("$.promises[1].importance").value("MEDIUM"))
 			.andExpect(jsonPath("$.promises[1].timeframe").doesNotExist());
 
-		verify(this.claudeClient).complete(contains("management promises"), contains(TRANSCRIPT_TEXT));
+		verify(this.claudeClient).completeDetailed(contains("management promises"), contains(TRANSCRIPT_TEXT));
 		List<Promise> saved = savedPromises();
 		assertThat(saved).hasSize(2);
 		assertThat(saved).extracting(Promise::getStatus).containsOnly(PromiseStatus.OPEN);
@@ -131,7 +144,7 @@ class PromiseExtractionApiTests {
 
 	@Test
 	void acceptsJsonWrappedInMarkdownFence() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willReturn("```json\n" + VALID_OUTPUT + "\n```");
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(reply("```json\n" + VALID_OUTPUT + "\n```"));
 
 		extract().andExpect(status().isOk()).andExpect(jsonPath("$.promiseCount").value(2));
 		assertThat(savedPromises()).hasSize(2);
@@ -139,7 +152,7 @@ class PromiseExtractionApiTests {
 
 	@Test
 	void emptyPromiseListIsASuccessfulExtractionWithNothingSaved() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willReturn("{\"promises\": []}");
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(reply("{\"promises\": []}"));
 
 		extract().andExpect(status().isOk())
 			.andExpect(jsonPath("$.promiseCount").value(0))
@@ -149,21 +162,21 @@ class PromiseExtractionApiTests {
 
 	@Test
 	void rejectsEmptyOutput() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willReturn("   ");
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(reply("   "));
 
 		expectFailure(502, "Claude returned an empty response. No promises were saved.");
 	}
 
 	@Test
 	void rejectsMalformedJson() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willReturn("{\"promises\": [{\"statement\": ");
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(reply("{\"promises\": [{\"statement\": "));
 
 		expectFailure(502, "Claude returned malformed JSON. No promises were saved.");
 	}
 
 	@Test
 	void rejectsOutputWithoutPromisesList() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willReturn("{\"items\": []}");
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(reply("{\"items\": []}"));
 
 		expectFailure(502, "Claude returned promises that failed validation. No promises were saved.")
 			.andExpect(jsonPath("$.errors", hasSize(1)))
@@ -172,14 +185,14 @@ class PromiseExtractionApiTests {
 
 	@Test
 	void rejectsWholeOutputWhenAnyPromiseHasInvalidFields() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willReturn("""
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(reply("""
 				{"promises": [
 				  {"statement": "Revenue will grow 15% in FY27.",
 				   "sourceQuote": "We expect revenue growth of 15% in FY27", "importance": "HIGH"},
 				  {"statement": " ", "sourceQuote": "We plan to hire 2,000 engineers", "importance": "CRITICAL",
 				   "category": "LONG_CATEGORY"}
 				]}
-				""".replace("LONG_CATEGORY", "x".repeat(101)));
+				""".replace("LONG_CATEGORY", "x".repeat(101))));
 
 		expectFailure(502, "Claude returned promises that failed validation. No promises were saved.")
 			.andExpect(jsonPath("$.errors", hasSize(3)))
@@ -190,14 +203,14 @@ class PromiseExtractionApiTests {
 
 	@Test
 	void rejectsQuotesThatAreNotInTheTranscript() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willReturn("""
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(reply("""
 				{"promises": [
 				  {"statement": "Revenue will grow 15% in FY27.",
 				   "sourceQuote": "We expect revenue growth of 15% in FY27", "importance": "HIGH"},
 				  {"statement": "Margins will reach 20%.",
 				   "sourceQuote": "We will reach a 20% operating margin next year.", "importance": "HIGH"}
 				]}
-				""");
+				"""));
 
 		expectFailure(502, "Claude returned promises that failed validation. No promises were saved.")
 			.andExpect(jsonPath("$.errors", hasSize(1)))
@@ -206,7 +219,7 @@ class PromiseExtractionApiTests {
 
 	@Test
 	void reportsTimeoutAsGatewayTimeout() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willThrow(
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willThrow(
 				new ClaudeTimeoutException("Claude API did not respond within 120 seconds.", null));
 
 		expectFailure(504, "Claude API did not respond within 120 seconds. No promises were saved.");
@@ -214,7 +227,7 @@ class PromiseExtractionApiTests {
 
 	@Test
 	void reportsProviderErrorAsBadGateway() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString()))
+		given(this.claudeClient.completeDetailed(anyString(), anyString()))
 			.willThrow(new ClaudeException("Claude API returned HTTP 529."));
 
 		expectFailure(502, "Claude API returned HTTP 529. No promises were saved.");
@@ -225,14 +238,21 @@ class PromiseExtractionApiTests {
 		given(this.claudeClient.isConfigured()).willReturn(false);
 
 		expectFailure(503, "Promise extraction is unavailable: the Claude API key is not configured.");
-		verify(this.claudeClient, never()).complete(anyString(), anyString());
+		verify(this.claudeClient, never()).completeDetailed(anyString(), anyString());
+		assertThat(this.extractionRunRepository.findByTranscriptIdOrderByCreatedAtDesc(this.transcriptId))
+			.singleElement()
+			.satisfies((run) -> {
+				assertThat(run.getStatus()).isEqualTo(ExtractionRunStatus.FAILED);
+				assertThat(run.getFailureCategory()).isEqualTo(ClaudeFailureCategory.NOT_CONFIGURED);
+				assertThat(run.getAttemptCount()).isZero();
+			});
 	}
 
 	@Test
 	void reportsPersistenceFailureAndSavesNothing() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willAnswer((invocation) -> {
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willAnswer((invocation) -> {
 			this.jdbcTemplate.update("DELETE FROM transcripts WHERE id = ?", this.transcriptId.toString());
-			return VALID_OUTPUT;
+			return reply(VALID_OUTPUT);
 		});
 
 		extract().andExpect(status().isInternalServerError())
@@ -246,19 +266,70 @@ class PromiseExtractionApiTests {
 		this.mockMvc.perform(post("/api/transcripts/{id}/extract", UUID.randomUUID()).with(user("demo")).with(csrf()))
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.detail", containsString("was not found")));
-		verify(this.claudeClient, never()).complete(anyString(), anyString());
+		verify(this.claudeClient, never()).completeDetailed(anyString(), anyString());
 	}
 
 	@Test
 	void rejectsSecondExtractionForSameTranscript() throws Exception {
-		given(this.claudeClient.complete(anyString(), anyString())).willReturn(VALID_OUTPUT);
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(reply(VALID_OUTPUT));
 		extract().andExpect(status().isOk());
 
 		extract().andExpect(status().isConflict())
 			.andExpect(jsonPath("$.detail")
 				.value("Promises have already been extracted for transcript " + this.transcriptId + "."));
-		verify(this.claudeClient, times(1)).complete(anyString(), anyString());
+		verify(this.claudeClient, times(1)).completeDetailed(anyString(), anyString());
 		assertThat(savedPromises()).hasSize(2);
+	}
+
+	@Test
+	void returnsTokenUsageAndStoresItForInspection() throws Exception {
+		given(this.claudeClient.completeDetailed(anyString(), anyString())).willReturn(new ClaudeCompletion(VALID_OUTPUT,
+				"anthropic", "claude-test-model", 2, 1000, 500, new BigDecimal("0.010500"), 12));
+
+		extract().andExpect(status().isOk())
+			.andExpect(jsonPath("$.usage.provider").value("anthropic"))
+			.andExpect(jsonPath("$.usage.model").value("claude-test-model"))
+			.andExpect(jsonPath("$.usage.attempts").value(2))
+			.andExpect(jsonPath("$.usage.inputTokens").value(1000))
+			.andExpect(jsonPath("$.usage.outputTokens").value(500))
+			.andExpect(jsonPath("$.usage.estimatedCostUsd").value(0.0105));
+
+		this.mockMvc.perform(get("/api/transcripts/{id}/extractions", this.transcriptId).with(user("demo")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$", hasSize(1)))
+			.andExpect(jsonPath("$[0].status").value("SUCCESS"))
+			.andExpect(jsonPath("$[0].attemptCount").value(2))
+			.andExpect(jsonPath("$[0].inputTokens").value(1000))
+			.andExpect(jsonPath("$[0].estimatedCostUsd").value(0.0105))
+			.andExpect(jsonPath("$[0].failureCategory").value(nullValue()));
+	}
+
+	@Test
+	void rejectsOversizedInputBeforeSavingPromises() throws Exception {
+		given(this.claudeClient.completeDetailed(anyString(), anyString()))
+			.willThrow(new ClaudeInputTooLargeException(200_000, 100_000));
+
+		expectFailure(400,
+				"Transcript is too large to send to Claude (estimated 200000 tokens, limit 100000). No promises were saved.");
+		assertThat(this.extractionRunRepository.findByTranscriptIdOrderByCreatedAtDesc(this.transcriptId))
+			.singleElement()
+			.satisfies((run) -> {
+				assertThat(run.getFailureCategory()).isEqualTo(ClaudeFailureCategory.INPUT_TOO_LARGE);
+				assertThat(run.getAttemptCount()).isZero();
+				assertThat(run.getStatus()).isEqualTo(ExtractionRunStatus.FAILED);
+			});
+	}
+
+	@Test
+	void reportsOpenCircuitWithoutCallingThrough() throws Exception {
+		given(this.claudeClient.completeDetailed(anyString(), anyString()))
+			.willThrow(new ClaudeCircuitOpenException());
+
+		expectFailure(503, "Claude API is temporarily unavailable after repeated failures. No promises were saved.");
+		assertThat(this.extractionRunRepository.findByTranscriptIdOrderByCreatedAtDesc(this.transcriptId))
+			.singleElement()
+			.extracting((run) -> run.getFailureCategory())
+			.isEqualTo(ClaudeFailureCategory.CIRCUIT_OPEN);
 	}
 
 	private ResultActions extract() throws Exception {
@@ -273,6 +344,10 @@ class PromiseExtractionApiTests {
 		assertThat(savedPromises()).isEmpty();
 		assertThat(this.transcriptRepository.existsById(this.transcriptId)).isTrue();
 		return result;
+	}
+
+	private static ClaudeCompletion reply(String text) {
+		return new ClaudeCompletion(text, "anthropic", "claude-test-model", 1, null, null, null, 1);
 	}
 
 	private List<Promise> savedPromises() {
