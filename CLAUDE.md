@@ -3,7 +3,7 @@
 - This is an MVP project called PromiseLedger
 - DO NOT over-engineer
 - No microservices
-- No authentication system in MVP
+- Username/password session authentication only (no OAuth/SSO, no RBAC)
 - No payments or subscriptions
 - Keep backend simple monolith
 
